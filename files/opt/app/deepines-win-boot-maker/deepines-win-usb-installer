@@ -1,0 +1,277 @@
+#! /bin/bash
+
+EFI_SIZE=860 #MiB
+ETIQUETA_PARTICION1="EFI"
+ETIQUETA_PARTICION2="INSTAL-WIN"
+CARPETA_TRABAJO=/var/tmp/deepin-win-boot-maker
+
+USB_DRIVES=()
+USB_DRIVE_SELEC=""
+ISO_FILE=""
+
+
+proc-salir () {
+	echo "Presione Enter para terminar"
+	read OPCION
+	exit 0
+}
+
+proc-cancelado () {
+
+	echo "Procedimiento cancelado"
+	proc-salir
+}
+
+
+selec-iso-file () {
+
+	echo -e "\n----------------------------"
+	echo -e "ISO del instalador de Windows\n"
+	echo "1) Arrastre el archivo .iso a esta terminal"
+	echo "2) Haga clic en la terminal"
+	echo -e "3) Presione Enter\n"
+
+	read ISO_FILE
+
+	ISO_FILE="$( echo "$ISO_FILE" | sed -e "s|^'||; s|'$||;" )"
+
+	if [[ -f $ISO_FILE ]]; then
+		
+		ES_ISO="$(file $ISO_FILE | grep "ISO 9660 CD-ROM filesystem data" )"
+
+		if [[ ! $ES_ISO ]]; then
+
+			echo -e "\n----------------------------"
+			echo "«$(basename "${ISO_FILE}")» no es un archivo ISO"
+			proc-salir
+		fi
+	else
+		echo "El archivo «$ISO_FILE» no existe"
+		proc-salir
+	fi
+}
+
+get-usb-drives () {
+	LISTA="$(ls -l /dev/disk/by-path/ | grep usb | cut -d "/" -f3 | sed "s|[0-9]||g" | uniq)"
+
+	INDICE=1
+	PRIMERA=true
+	for i in $LISTA; do
+		
+		USB_DRIVES[$INDICE]="/dev/${i}"
+		let INDICE++
+	done
+}
+
+print-usb-drives () {
+
+	INDICE=1
+	for i in ${USB_DRIVES[@]}; do
+		echo ${USB_DRIVES[$INDICE]}
+		let INDICE++
+	done
+}
+
+print-usb-drives-info () {
+
+	if [[ ${USB_DRIVES[@]} ]]; then
+		
+		echo -e "\n----------------------------"
+		echo -e "Unidades de almacenamiento USB\n"
+		lsblk -o NAME,LABEL,SIZE,FSTYPE,PATH ${USB_DRIVES[@]}
+	else
+		echo -e "\n----------------------------"
+		echo -e "No hay unidades de almacenamiento USB disponibles\n"
+	fi
+}
+
+selec-usb-drive () {
+
+	print-usb-drives-info
+
+	if [[ ${USB_DRIVES[@]} ]]; then
+		
+		SEGUIR=true	
+		while [[ $SEGUIR == true ]]; do
+			
+			OPCION=""
+
+			echo -e "\n----------------------------"
+			echo "Seleccione una de las unidades USB"
+
+			CONT=1
+			for i in $(print-usb-drives); do
+				echo "$CONT) ${i}"
+				let CONT++
+			done
+			echo -e "C) Cancelar\n"
+
+			read OPCION
+
+			case "$OPCION" in
+				C|c )
+					proc-cancelado
+					;;
+				* )
+					if [[ $OPCION -ge 1 ]] && [[ $OPCION -le ${#USB_DRIVES[@]} ]]; then
+
+						USB_DRIVE_SELEC="${USB_DRIVES[$OPCION]}"
+
+						ISO_SIZE="$( du -b ${ISO_FILE} | cut -f1 )"
+						EFI_SIZE_BYTE=$( expr ${EFI_SIZE} \* 1048576 \+ 10240 )
+						USB_SIZE_REQUER=$( expr $ISO_SIZE + ${EFI_SIZE_BYTE} )
+						USB_SIZE=$( lsblk -o size -b "${USB_DRIVE_SELEC}" | sed -n "2 p" )
+
+						#Comprobar que la unidad es suficientemente grande
+						if [[ $USB_SIZE -gt $USB_SIZE_REQUER ]]; then
+
+							echo "$USB_DRIVE_SELEC seleccionado"
+							SEGUIR=false
+						else
+
+							echo -e "\n----------------------------"
+							echo "La unidad seleccionada es de $( echo "scale=1; ${USB_SIZE} / 1073741824" | bc ) GiB y se necesitan al menos $( echo "scale=1; ${USB_SIZE_REQUER} / 1073741824" | bc ) GiB"
+							echo "Conecte una unidad de almacenamiento USB más grande y vuelva a intentarlo"
+							proc-salir
+						fi
+
+						
+					else
+						echo -e "\n----------------------------"
+						echo "Opción inválida, presione Enter para continuar"
+						read OPCION
+					fi
+					;;
+			esac
+		done
+	else
+
+		echo "Conecte una unidad de almacenamiento USB y vuelva a intentarlo"
+		proc-salir
+	fi
+
+		
+}
+
+format-usb-drive () {
+
+	echo -e "\n----------------------------"
+	echo "Se borrarán todos los archivos de $USB_DRIVE_SELEC"
+	lsblk -o NAME,LABEL,SIZE,FSTYPE,PATH $USB_DRIVE_SELEC | sed "1d"
+	echo -e "\n¿Está seguro de continuar? (s/N)"
+
+	OPCION=""
+	read OPCION
+
+	case "$OPCION" in
+		S|s )
+			echo -e "\n----------------------------"
+			echo "Este procedimiento de borrado no se puede deshacer"
+			echo "Presione la tecla «C» para confirmar"
+			OPCION=""
+			read OPCION
+
+			case "$OPCION" in
+				C|c )
+					
+					NUM_PARTICIONES="$( lsblk $USB_DRIVE_SELEC | sed "1,2d" | wc -l )"
+
+					
+
+					echo -e "\n----------------------------"
+					echo "Desmontando $USB_DRIVE_SELEC"
+
+					if [[ $NUM_PARTICIONES -lt 1 ]]; then
+						NUM_PARTICIONES=2
+						sudo umount "${USB_DRIVE_SELEC}"
+					else
+						sudo umount "${USB_DRIVE_SELEC}"[1-"${NUM_PARTICIONES}"]
+					fi
+					
+					echo "Borrando $USB_DRIVE_SELEC..."
+					sudo sgdisk --clear "${USB_DRIVE_SELEC}" 1>/dev/null
+					sudo sgdisk --zap-all "${USB_DRIVE_SELEC}" 1>/dev/null
+
+					echo "Creando nueva tabla de particiones GPT en $USB_DRIVE_SELEC"
+					echo "Creando partición EFI de $EFI_SIZE MiB"
+					sudo sgdisk -n 1:1MiB:"${EFI_SIZE}"MiB "${USB_DRIVE_SELEC}" 1>/dev/null
+					echo "Creando segunda partición con el resto del espacio disponible"
+					sudo sgdisk -n 2 "${USB_DRIVE_SELEC}" 1>/dev/null
+
+					sudo umount "${USB_DRIVE_SELEC}"[1-"${NUM_PARTICIONES}"] 2>/dev/null
+
+					sudo sgdisk -t 1:ef00 "${USB_DRIVE_SELEC}" 1>/dev/null
+					sudo sgdisk -t 2:0700 "${USB_DRIVE_SELEC}" 1>/dev/null
+
+					sudo umount "${USB_DRIVE_SELEC}"[1-"${NUM_PARTICIONES}"] 2>/dev/null
+
+					echo "Estableciendo etiquetas a las particiones"
+					echo "Primera partición: ${ETIQUETA_PARTICION1}"
+					sudo sgdisk -c 1:"${ETIQUETA_PARTICION1}" "${USB_DRIVE_SELEC}" 1>/dev/null
+					echo "Segunda partición: ${ETIQUETA_PARTICION2}"
+					sudo sgdisk -c 2:"${ETIQUETA_PARTICION2}" "${USB_DRIVE_SELEC}" 1>/dev/null
+
+					sudo umount "${USB_DRIVE_SELEC}"[1-"${NUM_PARTICIONES}"] 2>/dev/null
+
+					sudo mkfs.vfat -n "${ETIQUETA_PARTICION1}" "${USB_DRIVE_SELEC}1"  1>/dev/null
+					#sudo mkfs.ntfs -f -L "${ETIQUETA_PARTICION2}" "${USB_DRIVE_SELEC}2" 1>/dev/null
+					sudo mkfs.exfat -n "${ETIQUETA_PARTICION2}" "${USB_DRIVE_SELEC}2" 1>/dev/null
+
+					;;
+				* )
+					proc-cancelado
+					;;
+			esac
+
+			;;
+		* )
+			proc-cancelado
+			;;
+	esac
+}
+
+copy-files () {
+
+	CARPETA_ORIGEN=$(pwd)
+
+	echo -e "\n----------------------------"
+	ISO_LOOP="$( udisksctl loop-setup  -r -f "${ISO_FILE}" | grep -oE '[^ ]+$' | sed "s|\.$||g" )"
+	ISO_MONTAJE="$( udisksctl mount -b "${ISO_LOOP}" | grep -oE '[^ ]+$' | sed "s|\.$||g" )"
+	echo "${ISO_FILE} montada en ${ISO_MONTAJE}"
+	USB_EFI_MONTAJE="$( udisksctl mount -b "${USB_DRIVE_SELEC}1" | grep -oE '[^ ]+$' | sed "s|\.$||g" )"
+	echo "${USB_DRIVE_SELEC}1 montada en ${USB_EFI_MONTAJE}"
+	USB_INSTAL_MONTAJE="$( udisksctl mount -b "${USB_DRIVE_SELEC}2" | grep -oE '[^ ]+$' | sed "s|\.$||g" )"
+	echo "${USB_DRIVE_SELEC}2 montada en ${USB_INSTAL_MONTAJE}"
+
+	cd "${ISO_MONTAJE}"
+
+	echo -e "\nIniciando copia de archivos"
+	rsync -ruvhlpt --progress $( ls | grep -v sources) "${USB_EFI_MONTAJE}"
+	mkdir -p "${USB_EFI_MONTAJE}/sources/"
+	rsync -ruvhlpt --progress sources/boot.wim  "${USB_EFI_MONTAJE}/sources/"
+	rsync -ruvhlpt --progress ./  "${USB_INSTAL_MONTAJE}"
+	echo -e "\nCopia de archivos finalizada"
+
+	cd "${CARPETA_ORIGEN}"
+
+	echo -e "\n----------------------------"
+	echo "Desmontando unidades"
+	echo "Desmontando ${ISO_FILE}"
+	udisksctl unmount -b "${ISO_LOOP}" 1>/dev/null
+	udisksctl loop-delete -b "${ISO_LOOP}" 1>/dev/null
+	echo "Desmontando ${USB_EFI_MONTAJE}"
+	Escribiendo datos del cache a la unidad de almacenamiento USB
+	udisksctl unmount -b "${USB_DRIVE_SELEC}1" 1>/dev/null
+	echo "Desmontando ${USB_INSTAL_MONTAJE}"
+	Escribiendo datos del cache a la unidad de almacenamiento USB
+	udisksctl unmount -b "${USB_DRIVE_SELEC}2" 1>/dev/null
+
+	echo -e "\n----------------------------"
+
+}
+
+selec-iso-file
+get-usb-drives
+selec-usb-drive
+format-usb-drive
+copy-files
