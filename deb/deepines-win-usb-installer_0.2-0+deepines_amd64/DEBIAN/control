@@ -1,0 +1,15 @@
+Package: deepines-win-usb-installer
+Version: 0:0.2-0+deepines
+Architecture: amd64
+Installed-Size: 104
+Section: system
+Maintainer: Isaías Gätjens M <igatjens@gmail.com>
+Homepage: https://github.com/igatjens/deepines-win-usb-installer
+Priority: optional
+Pre-Depends: dpkg (>= 1.5)
+Depends: dpkg (>= 1.5), sed (>=4.5), grep (>=3.1), udisks2 (>=2.8.1.1), coreutils (>=8.20), deepin-terminal (>= 5.0.4)
+Replaces: deepines-win-usb-installer (<=0:0.1-0)
+Conflicts: 
+Urgency: low
+Description: Instalador USB de Windows 10
+ Herramienta para crear un instalador USB de Winodws 10. Compatible únicamente con UEFI.

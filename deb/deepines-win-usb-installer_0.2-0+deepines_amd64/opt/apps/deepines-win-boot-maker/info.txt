@@ -1,0 +1,24 @@
+----------------------------
+
+Instalador USB de Windows graba el instalador de Windows 10 en una llave USB.
+Requiere del archivo .iso que contiene el instalador de Windows.
+
+
+** Aclaraciones **
+
+- Compatible únicamente con UEFI
+- Compatible con Secure Boot (configuración por defecto de fábrica)
+- No es compatible con modo legacy, modo CSM o BIOS
+- Si su computadora tiene Secure Boot entonces tiene UEFI
+
+
+Para más información sobre la diferencia entre UEFI y BIOS, consulte el siguiente enlace.
+
+https://es.wikipedia.org/wiki/Unified_Extensible_Firmware_Interface
+
+
+Puede descargar Windows desde el sitio oficial de Microsoft en el siguiente enlace.
+
+https://www.microsoft.com/es-es/software-download/windows10ISO
+
+----------------------------
