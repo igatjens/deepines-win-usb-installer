@@ -28,7 +28,7 @@ selec-iso-file () {
 	echo -e "\n----------------------------"
 	echo -e "ISO del instalador de Windows\n"
 	echo "1) Arrastre el archivo .iso a esta terminal"
-	echo "2) Haga clic en la terminal"
+	echo "2) Haga clic en esta terminal"
 	echo -e "3) Presione Enter\n"
 
 	read ISO_FILE
@@ -87,7 +87,7 @@ print-usb-drives-info () {
 
 selec-usb-drive () {
 
-	print-usb-drives-info
+	
 
 	if [[ ${USB_DRIVES[@]} ]]; then
 		
@@ -95,6 +95,8 @@ selec-usb-drive () {
 		while [[ $SEGUIR == true ]]; do
 			
 			OPCION=""
+
+			print-usb-drives-info
 
 			echo -e "\n----------------------------"
 			echo "Seleccione una de las unidades USB"
@@ -146,6 +148,7 @@ selec-usb-drive () {
 		done
 	else
 
+		print-usb-drives-info
 		echo "Conecte una unidad de almacenamiento USB y vuelva a intentarlo"
 		proc-salir
 	fi
@@ -237,7 +240,7 @@ copy-files () {
 	echo -e "\n----------------------------"
 	ISO_LOOP="$( udisksctl loop-setup  -r -f "${ISO_FILE}" | grep -oE '[^ ]+$' | sed "s|\.$||g" )"
 	ISO_MONTAJE="$( udisksctl mount -b "${ISO_LOOP}" | grep -oE '[^ ]+$' | sed "s|\.$||g" )"
-	echo "${ISO_FILE} montada en ${ISO_MONTAJE}"
+	echo "$( basename ${ISO_FILE}) montada en ${ISO_MONTAJE}"
 	USB_EFI_MONTAJE="$( udisksctl mount -b "${USB_DRIVE_SELEC}1" | grep -oE '[^ ]+$' | sed "s|\.$||g" )"
 	echo "${USB_DRIVE_SELEC}1 montada en ${USB_EFI_MONTAJE}"
 	USB_INSTAL_MONTAJE="$( udisksctl mount -b "${USB_DRIVE_SELEC}2" | grep -oE '[^ ]+$' | sed "s|\.$||g" )"
@@ -256,18 +259,21 @@ copy-files () {
 
 	echo -e "\n----------------------------"
 	echo "Desmontando unidades"
-	echo "Desmontando ${ISO_FILE}"
+	echo "Desmontando $( basename ${ISO_FILE})"
 	udisksctl unmount -b "${ISO_LOOP}" 1>/dev/null
 	udisksctl loop-delete -b "${ISO_LOOP}" 1>/dev/null
+	
 	echo "Desmontando ${USB_EFI_MONTAJE}"
-	Escribiendo datos del cache a la unidad de almacenamiento USB
+	echo "Escribiendo datos del cache a la unidad de almacenamiento USB"
 	udisksctl unmount -b "${USB_DRIVE_SELEC}1" 1>/dev/null
+	
 	echo "Desmontando ${USB_INSTAL_MONTAJE}"
-	Escribiendo datos del cache a la unidad de almacenamiento USB
+	echo "Escribiendo datos del cache a la unidad de almacenamiento USB"
 	udisksctl unmount -b "${USB_DRIVE_SELEC}2" 1>/dev/null
 
 	echo -e "\n----------------------------"
-
+	echo "Proceso finalizado"
+	proc-salir
 }
 
 selec-iso-file
